@@ -1,0 +1,515 @@
+---
+title: "Data Wrangling Cookbook"
+format: 
+  html:
+    toc: true
+    toc-location: left
+    toc_float: true
+editor: visual
+---
+
+## Importance of Data Wrangling in Data Analysis
+
+Data wrangling is a critical step in the data analysis process, transforming raw, messy datasets into clean, structured, and meaningful formats suitable for analysis. It ensures data consistency, accuracy, and reliability, which are essential for generating valid insights. In Life Sciences, this can involve cleaning experimental data, integrating datasets from different sources, and preparing data for visualization or statistical modeling.
+
+### Overview of the Tidyverse Philosophy
+
+The Tidyverse is a collection of R packages guided by the [Tidy Data Principles](https://vita.had.co.nz/papers/tidy-data.pdf):
+
+There are three principles which make a dataset tidy:
+
+1.  Each column contains a single variable
+
+2.  Each row contains a single observation
+
+3.  Each value must have its own cell
+
+    ![](images/tidy-data_principles.png)
+
+This uniform structure simplifies data manipulation and analysis, making workflows intuitive and reproducible. Built on a consistent grammar, Tidyverse tools enable seamless integration of tasks like filtering, transforming, and visualizing data, ensuring clarity and efficiency.
+
+### Key Tidyverse Packages for Data Wrangling (``` readr,``dplyr ```, `tidyr`)
+
+-   **`readr`**: Enables fast and user-friendly import of data from CSV, TSV, and other text formats, with flexible handling of column types and encodings.
+-   **`dplyr`**: Focuses on efficient data manipulation, providing intuitive functions for filtering, summarizing, and transforming data.
+-   **`tidyr`**: Specializes in reshaping and organizing datasets, allowing users to pivot between long and wide formats or handle missing values.
+
+Together, these packages streamline the process of wrangling data into an analysis-ready format.
+
+## Set-up
+
+```{r}
+# load tidyverse libraries
+library(tibble)
+library(readr)
+library(dplyr)
+library(tidyr)
+# alternatively: library(tidyverse)
+
+# load non-tidyverse libraries
+library(writexl)
+library(here)
+```
+
+------------------------------------------------------------------------
+
+## Load, Generate, and Inspect Data
+
+### Load Data
+
+-   **Recipe 1a: Reading CSV Files**
+
+    ```{r}
+    readr::read_csv(file = here::here("reports/1_data_wrangling/files/synthetic_data_2024-11-24.csv"), 
+                                      
+                    # consider the first row as column names
+                    col_names = TRUE, 
+                    # ability to skip the N first rows if needed
+                    skip = 0,
+                    # ability to force variable type, by default it guesses
+                    col_types = NULL)
+    ```
+
+-   **Recipe 1b: Reading TSV Files**
+
+    ```{r}
+    readr::read_tsv(file=here::here("reports/1_data_wrangling/files/synthetic_data_2024-11-24.tsv"), 
+                    # consider the first row as column names
+                    col_names = TRUE, 
+                    # ability to skip the N first rows if needed
+                    skip = 0,
+                    # ability to force a variable type per column, by default it guesses
+                    col_types = NULL)
+
+    # see also: readr::read_delim()
+    ```
+
+-   **Recipe 1c: Importing Excel Files**
+
+    ```{r}
+    readxl::read_excel(path = here::here("reports/1_data_wrangling/files/synthetic_data_2024-11-24.xlsx"), 
+                       # specify name or index of the sheet to read
+                       sheet = "sheet_2",
+                       # consider the first row for column names
+                       col_names = TRUE, 
+                       # ability to skip the N first rows if needed
+                       skip = 0,
+                       # ability to force a variable type per column, by default it guesses
+                       col_types = NULL)
+    ```
+
+### Generate a Synthetic Dataset
+
+Generating Synthetic data is a valuable tool for learning and practicing tidy data analysis. It allows users to work with realistic, controlled datasets without concerns about confidentiality or access restrictions. Synthetic data is especially helpful for demonstrating workflows, testing methods, and debugging code in a reproducible manner.
+
+**Recipe 2: generate synthetic data**
+
+```{r}
+# set a random seed to promote reproducibility
+# it is required as we use random generators
+set.seed(42)
+
+nb_subjects = 25
+synthetic_data <- tibble::tibble(Subject_Id = paste0("SUBJ", 1:nb_subjects),
+                                 # variable from a uniform distribution
+                                 Age = runif(n = nb_subjects, min = 20, max = 80),
+                                 # variable sample from define categories and probabilities
+                                 Sex = sample(x = c("Male", "Female", NA), prob = c(0.3, 0.5, 0.2), 
+                                              size = nb_subjects, replace = TRUE),
+                                 # variable from a normal distribution where standard deviation 
+                                 # depends on a continuous variable
+                                 Biomarker_1 = rnorm(n = nb_subjects, 
+                                                     mean = 150, 
+                                                     sd = 10*Age*0.05),
+                                 # variable from a normal distribution where the mean 
+                                 # conditionnaly depends on a categorical variable
+                                 Biomarker_2 = rnorm(n = nb_subjects, 
+                                                     mean = dplyr::case_when(
+                                                       Sex == "Female" ~ 60,
+                                                       Sex == "Male" ~ 40,
+                                                       .default = NA), 
+                                                     sd = 10))
+synthetic_data
+
+# see also: ?Distributions for more examples of available distributions
+```
+
+### **Inspecting Data**
+
+-   **Recipe 3a: Quick pick (only a few rows)**
+
+    ```{r}
+    # looking at the top 5 rows
+    head(synthetic_data, n = 5)
+    # see also: tail()
+    ```
+
+-   **Recipe 3b: View Dataset Structure**
+
+    ```{r}
+    # provide the full list of variable with type, and sample values
+    dplyr::glimpse(synthetic_data)
+    ```
+
+-   **Recipe 3c: View Dataset inside RStudio**
+
+    ```{r}
+    # opens a tabular view of the dataset in RStudio
+    View(synthetic_data)
+    ```
+
+------------------------------------------------------------------------
+
+## Preparing Data
+
+### Selecting, Renaming and Reordering Columns
+
+-   **Recipe 4a: Selecting Columns**
+
+    ```{r}
+    # use variable names to select them
+    synthetic_data_mini <- synthetic_data |> 
+                            dplyr::select(Subject_Id, Age, Sex)
+    dplyr::glimpse(synthetic_data_mini)
+    ```
+
+-   **Recipe 4b: Reordering Columns**
+
+    ```{r}
+    # swap column order according to list of variables provided
+    synthetic_data |> 
+      dplyr::select(Subject_Id, Sex, Age, Biomarker_2, Biomarker_1)
+    # see also: dplyr::relocate()
+    ```
+
+-   **Recipe 4c: Renaming Columns**
+
+    ```{r}
+    # rename column names
+    synthetic_data |> 
+      dplyr::rename(DonorId = Subject_Id, 
+                    Age_VO = Age)
+    ```
+
+### Reformatting Data Types
+
+-   **Recipe 5a: Converting Character Column to Factor**
+
+    ```{r}
+    # convert column to factor
+    ```
+
+-   **Recipe 5b: Convert Character Column to Numeric**
+
+    ```{r}
+    # convert character column to numeric
+    ```
+
+-   **Recipe 5c: \[Advanced\] Handling Dates and Times**
+
+    ```{r}
+    # check R package lubridate for dates and times
+    ```
+
+------------------------------------------------------------------------
+
+## Selecting Data
+
+### Filtering Rows
+
+-   **Recipe 6a: Subsetting Data by Conditions**
+
+    ```{r}
+    synthetic_data |> 
+      # look for rows where Age < 30 AND Sex is Female
+      dplyr::filter(Age < 30, Sex == "Female")
+    ```
+
+-   **Recipe 6b: Using Logical Operators**
+
+    ```{r}
+    synthetic_data |> dplyr::filter()
+    ```
+
+See more advanced operations at [row-wise operation from Posit](https://dplyr.tidyverse.org/articles/rowwise.html)
+
+### Selecting Columns
+
+-   **Recipe 7a:Selecting Columns by Name or Pattern**
+
+    ```{r}
+    # select subject_id column, and any column names containing string "Biomarker"
+    synthetic_data |> dplyr::select(Subject_Id, tidyselect::contains("Biomarker"))
+    # see also: tidyselect::start_with(), ends_with(), matches()
+    ```
+
+-   **Recipe 7b: Drop Columns by Name**
+
+    ```{r}
+    # remove Age and Sex columns
+    synthetic_data |> dplyr::select(-Age, -Sex)
+    ```
+
+See more advanced case at [Colwise operations from Posit](https://dplyr.tidyverse.org/articles/colwise.html)
+
+### Creating and Transforming Variables
+
+-   **Recipe 8a: Adding New Variables**
+
+    ```{r}
+    # create a new variable based on existing ones
+    synthetic_data |> dplyr::mutate(Biomarker_Ratio = Biomarker_2/Biomarker_1)
+    ```
+
+-   **Recipe 8b: Normalizing and Scaling Variables**
+
+    ```{r}
+    synthetic_data |> dplyr::mutate(Biomarker1_zscore = scale(Biomarker_1, center = TRUE, scale=TRUE))
+    ```
+
+-   **Recipe 8c: Applying Functions to Variables**
+
+    ```{r}
+    # apply the log transformation across all columns with Biomarker in their name
+    synthetic_data |> 
+      dplyr::mutate(across(contains("Biomarker"), 
+                           # function to apply. '~' is used to specify a function
+                           ~ log(.x), 
+                           # name transformed columns according to col name + "_log"
+                           # if not specified, it overwrites the variables
+                           .names = "{.col}_log"))
+    ```
+
+### Handling Missing Data
+
+-   **Recipe 9a: Detecting Missing Values**
+
+    ```{r}
+    synthetic_data |>  
+      # identify any rows where there is a NA value
+      dplyr::filter(dplyr::if_any(everything(), ~ is.na(.x)))
+    # see also:  filter(if_all(everything(), ~ !is.na(.x)))
+    ```
+
+-   **Recipe 9b: Removing Rows with Missing Data**
+
+    ```{r}
+    # drop rows with any missing value
+    synthetic_data |> tidyr::drop_na()
+    # see also, drop_na(Subject_Id, Sex) to drop only if Subject_Id et Sex have missing values
+    ```
+
+-   **Recipe 9c: Removing Cols with Missing Data**
+
+    ```{r}
+
+    ```
+
+------------------------------------------------------------------------
+
+## Summarizing and Aggregating Data
+
+### Summarizing Variables
+
+-   **Recipe 10a: Descriptive Statistics (Mean, Median, etc.)**
+
+    ```{r}
+    synthetic_data |>
+      # compute overall summaries
+      dplyr::summarise(
+        # on columns that are of type numeric, compute median value
+        across(where(is.numeric), ~median(.x, na.rm = TRUE), .names = "median_{.col}"),
+        # on specific columns, compute min value
+        across(c(Age, Biomarker_1), ~min(.x, na.rm = TRUE), .names = "min_{.col}"))
+    ```
+
+-   **Recipe 10b: Aggregating Data**
+
+    ```{r}
+
+    ```
+
+### Grouped Operations
+
+-   **Recipe 11a: Grouping Data by Categories**
+
+    ```{r}
+
+    ```
+
+-   **Recipe 11b: Summarizing Within Groups**
+
+    ```{r}
+    synthetic_data |>
+      dplyr::group_by(Sex) |>
+      # compute overall summaries
+      dplyr::summarise(
+        # on columns that are of type numeric, compute median value
+        across(where(is.numeric), ~median(.x, na.rm = TRUE), .names = "median_{.col}"),
+        # on specific columns, compute min value
+        across(c(Age, Biomarker_1), ~min(.x, na.rm = TRUE), .names = "min_{.col}"))
+    ```
+
+------------------------------------------------------------------------
+
+## Reshaping Data
+
+### Pivoting Data
+
+Pivoting data is a crucial skill for transforming datasets between **wide** and **long** formats, enabling more effective analysis and visualization. In its **wide format**, data is often easier to read but less suitable for computational tasks. Pivoting to a **long format** structures the data for tidy principles, where each row represents a single observation, making it compatible with functions for summarization, modeling, and plotting (e.g., `ggplot2`). Conversely, pivoting back to a **wide format** is essential for generating summary tables or reports. Mastering data pivoting ensures flexibility in handling datasets and streamlines workflows across diverse analytical tasks.
+
+![](images/pivot_table.png){fig-align="center" width="500"}
+
+-   **Recipe 12a: Wide-to-Long Transformations**
+
+    ```{r}
+    # define table with wide format
+    df_measurements <- tibble::tibble(id = 1:10,
+                                      wk1 = rnorm(n = 10, mean = 10),
+                                      wk2 = rnorm(n = 10, mean = 12),
+                                      wk3 = rnorm(n = 10, mean = 15))
+
+    df_measurements_long <- df_measurements |>
+      # transform to long format by collapsing the columns starting with "wk"
+      pivot_longer(
+        cols = starts_with("wk"),
+        names_to = "week",
+        #names_prefix = "wk",
+        values_to = "measurements",
+        values_drop_na = TRUE
+      )
+    head(df_measurements_long)
+    ```
+
+-   **Recipe 12b: Long-to-Wide Transformations**
+
+    ```{r}
+    # inverse transoformation from long to wide
+    df_measurements_long %>%
+      pivot_wider(names_from = week, values_from = measurements) |>
+      head()
+    ```
+
+### Separating and Uniting Columns
+
+-   **Recipe 13a: Splitting One Column into Multiple**
+
+    ```{r}
+
+    ```
+
+-   **Recipe 13b: Combining Multiple Columns into One**
+
+    ```{r}
+
+    ```
+
+------------------------------------------------------------------------
+
+## Combining and Merging Data
+
+### Merging Datasets
+
+To merge two data frames in R based on specific ID columns, you can use the dplyr package. Here are four ways to join the data frames, ensuring observations are matched correctly regardless of their order:
+
+1.  **left_join()**: Combines data frames by keeping all rows from the left data frame and matching rows from the right. All rows from the left are included in the final result.
+
+2.  **right_join()**: Keeps all rows from the right data frame and includes matching rows from the left. This is the opposite of left_join().
+
+3.  **inner_join()**: Retains only the rows with matching IDs in both data frames, excluding any rows that do not match.
+
+4.  **full_join()**: Includes all rows from both data frames, filling in missing values with NA where there are no matches between the ID column.
+
+    ![](images/merge_operations.png){width="300"}
+
+-   **Recipe 14a: Different Types of Joins (Inner, Outer, Left, Right)**
+
+    ```{r}
+    # create table to merge with similar subject identifier (but different column name)
+    df_data <- tibble(DonorId = paste0("SUBJ", 5:10),
+                      Biomarker_3 = rnorm(n = 6, mean = 24, sd = 4))
+    # Left join to keep all the records from synthetic data, and add new data when matching on Subject_Id
+    df_merge <- synthetic_data |> dplyr::left_join(df_data, by = c("Subject_Id" = "DonorId"))
+    head(df_merge, n=11)
+    # see also: right_join(), inner_join(), outer_join()
+    ```
+
+-   **Recipe 14b: Joining by Keys and Multiple Columns**
+
+    ```{r}
+
+    ```
+
+### Combining Rows
+
+-   **Recipe 15a: Appending Rows from a Different Datasets**
+
+    ```{r}
+    df_data <- tibble(Subject_Id = paste0("SUBJ", 100:103),
+                      Age = 25,
+                      Sex = "Male")
+    new_data <-synthetic_data |> 
+                # binding rows only works on table with same column names
+                dplyr::select(Subject_Id, Age, Sex) |>
+                # add 'df_data' rows at the bottom of synthetic_data
+                dplyr::bind_rows(df_data)
+    tail(new_data)
+    ```
+
+-   **Recipe 15b: Removing Duplicate Rows**
+
+    ```{r}
+    synthetic_data |> dplyr::distinct()
+    # see also distinct(Subject_Id, Sex)
+    ```
+
+------------------------------------------------------------------------
+
+## Exporting and Saving Data
+
+-   **Recipe 16a:Writing Data as CSV Format**
+
+    ```{r}
+    readr::write_csv(x = synthetic_data, 
+                     col_names = TRUE, 
+                     file = here::here(paste0("data/wrangling_files/synthetic_data_", Sys.Date(),".csv")))
+    ```
+
+-   **Recipe 16b: Exporting Data as TSV Format**
+
+    ```{r}
+    readr::write_tsv(x = synthetic_data, 
+                     col_names = TRUE, 
+                     file = here::here(paste0("data/wrangling_files/synthetic_data_", Sys.Date(),".tsv")))
+    # see also: readr::write_delim(x, file, delim = "\t")
+    ```
+
+-   **Recipe 16c: Exporting to Excel Files**
+
+    ```{r}
+    writexl::write_xlsx(x = list(sheet_1 = iris,
+                                 sheet_2 = synthetic_data), 
+                        col_names = TRUE, 
+                        path = here::here(paste0("data/wrangling_files/synthetic_data_", Sys.Date(),".xlsx")))
+    ```
+
+-   **\[Advanced\] Recipe 16d:Saving and Loading R Objects**
+
+    ```{r}
+    # Save an R object as a compact binary format
+    saveRDS(synthetic_data, file = here::here(paste0("data/wrangling_files/synthetic_data_", Sys.Date(),".rds")))
+
+    # read R object from .rds file and assign it to a variable name
+    df_data <- readRDS(file = here::here(paste0("data/wrangling_files/synthetic_data_2024-11-24.rds")))
+    df_data
+    ```
+
+## Continue learning with:
+
+-   [Tidyverse cookbook](https://rstudio-education.github.io/tidyverse-cookbook/)
+
+-   [Cheat Sheets on Tidyverse Packages](https://rstudio.github.io/cheatsheets/)
+
+-   [R For Data Science, free online book.](https://r4ds.hadley.nz/)
+
+-   [R Cookbook](https://rc2e.com/)
