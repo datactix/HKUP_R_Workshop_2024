@@ -1,0 +1,365 @@
+---
+title: "PCA Practicals"
+format: 
+  html:
+    toc: true
+    toc-location: left
+    toc_float: true
+    embed-resources: true
+editor: visual
+---
+
+## Introduction
+
+To put into practice the PCA method, we will explore a 13-Plex Luminex dataset derived from a TruCulture experiment, where whole blood was challenged, in vitro, by different immune-related stimulations, and cytokine responses were measured. The dataset is from the [Milieu Intérieur project](https://www.milieuinterieur.fr/en/), and it was recently described in \[[Saint-André et al, Nature, 2024](https://www.nature.com/articles/s41586-023-06968-8)\].
+
+In the article, the authors show how smoking, cytomegalovirus (CMV) latent infection and body mass index (BMI) are major contributors to variability in cytokine responses. We suggest to use the PCA method to explore these findings.
+
+For this practical, we will focus on 3 TruCulture stimulations representing three classes of immune responses:
+
+-    a **microbial response** with *Bacillus Calmette-Guerin (**BCG**)*
+
+-   a **viral response** with *polyinosinic-polycytidylic acid* (**Poly I:C**)
+
+-   a **T-Cell activator** with *Staphylococcus aureus enterotoxin B superantigen* (**SEB**)
+
+-   as well as, the **Null** non-stimulation condition as a control.
+
+## Set-up
+
+Load all the necessary R libraries used in this analysis
+
+```{r}
+library(tidyverse)
+library(FactoMineR)
+library(factoextra)
+```
+
+## Load and filter the Luminex dataset
+
+For this analysis, we will use the curated version of the TruCulture Luminex dataset which has been integrated with some eCRF variables.
+
+```{r}
+# Patht to the dataset file
+TruC_Luminex_Path <- here::here("data/curated_datasets/HKUIP_MI_Luminex-eCRF_Curated.tsv")
+```
+
+Using the path to the curated file, put in place the necessary code to load and transform the original dataset into an analysis ready data.frame. To do so, follow the instructions below.
+
+-   Load the dataset file with the appropriate function from the readr package.
+
+    ```{r}
+    # ... your code here ...
+    df_luminex <- readr::read_tsv(file = TruC_Luminex_Path, show_col_types = FALSE)
+    ```
+
+-   create a new dataset from the original file by building a dplyr processing pipeline to accomplish the following transformations:
+
+    -   Filter the columns of the dataset to only keep the **cytokine expression** variables, as well as the **Stimulus** variable, and the **Sex**, **Age**, **BMI**, **CMV** from the eCRF variables
+
+    -   Filter the rows to only keep the measurements related to the TruCulture stimulations: **Null**, **BCG**, **Poly I:C**, and **SEB**.
+
+    -   **Log-transform** all the cytokine expression variables to mitigate the non-normal distribution of the cytokines.
+
+    -   Finally, **remove observations with** **missing values**, as PCA does not handle missing values.
+
+    ```{r}
+        # ... your code here ...
+        df_4stim_log <- df_luminex |>
+                            dplyr::select(Age, Sex, BMI, Smoking, 
+                                          CMVPositiveSerology, StimulusName, 
+                                          CXCL5:TNFa) |>
+          dplyr::filter(StimulusName %in% c("Null", "SEB", "PolyIC", "BCG")) |>
+          dplyr::mutate(across(CXCL5:TNFa, ~ log(.x))) |>
+          tidyr::drop_na()
+    ```
+
+## Explore the correlation structure
+
+Build a correlation matrix of the cytokine expression data, using the pearson method, and visualize it using the corrplot.mixed function to have a compact representation of the correlation structure.
+
+```{r}
+# ... your code here ...
+# compute pairwise correlations only across the cytokine variables
+cytokines_cor = cor(x = df_4stim_log |> dplyr::select(CXCL5:TNFa), 
+                    # use pearson correlation. See also spearman for non parametric
+                    method = "pearson", 
+                    # handle missing values
+                    use = "pairwise.complete.obs")
+# visualise correlation matrix 
+corrplot.mixed(cytokines_cor, 
+               # order 
+               order = 'hclust')
+```
+
+Describe the most prominent correlation structures you observe on the correlogram.
+
+-   ... your comments here ...
+
+-   It appears that the dataset is structured around 3 groups of variables:
+
+    -   IL12p70 has a unique expression pattern, inversely correlated to the rest of the cytokines
+
+    -   {CXCL5, IL6, IL1b, TNFa, IL8, IL23}: are tightly correlated, with a moderate correlation with the 3rd group of variables.
+
+    -   {IFNg, IL10, CSF2, IL2, IL13, IL17}: these cytokines are tightly correlated , with a moderate correlation with the 2nd group of variables
+
+## PCA exploration of the 4 stimulated conditions
+
+Using the filtered dataset on the 4 TruCulture Stimulations (Null, BCG, PolyIC, SEB), put in place the necessary R code to perfom a PCA computation using the **FactoMineR** package. The visualization of this PCA will help us identify possible clusters and identify associated variables.
+
+### \>\>\> \[Comment\]  helper functions for PCA
+
+These functions are only provided to make the corrected version of the practical more compact as there are a lot of repeated code across the answers (PCA computation, PCA visualization). This approach of building reusable functions should be motivated for the most advanced users.
+
+```{r}
+# helper function to compute a PCA on luminex data
+compute_pca <- function(df_data, 
+                        quali.sup.var = c("Sex", "CMVPositiveSerology", "Smoking", "StimulusName"), 
+                        quanti.sup.var = c("Age", "BMI")){
+  
+  pca_res <- FactoMineR::PCA(X = df_data, 
+                            scale.unit = TRUE, 
+                            ncp = 5, 
+                            quanti.sup = which(names(df_data) %in% quanti.sup.var), 
+                            quali.sup = which(names(df_data) %in% quali.sup.var), 
+                            graph = FALSE)
+  pca_res
+}
+
+# helper function to build bi-plot with habillage
+biplot_pca <- function(pca_res = NULL, 
+                       df_data = NULL,
+                       axes = c(1,2), 
+                       habillage = "Sex",
+                       invisible = "none"){
+  p <- factoextra::fviz_pca_biplot(pca_res, 
+                            geom = "point",
+                            alpha.ind = 0.3,
+                            invisible = invisible,
+                            axes = axes, 
+                            col.var = "black",
+                            repel = TRUE,
+                            addEllipses = TRUE,
+                            habillage = which(names(df_data) == habillage))
+  p
+}
+```
+
+```{r}
+# your code here ...
+# PCA computation for the 4 Stimulation dataset
+pca_4stim <- compute_pca(df_data = df_4stim_log)
+```
+
+### Scree plot
+
+Using the Scree plot, suggest the number of principal components that should be considered in the analysis of this 4 stimulation dataset.
+
+```{r}
+# your code here ...
+factoextra::fviz_screeplot(pca_4stim)
+```
+
+Your comments of the Scree plot here:
+
+-   ...
+
+### Visualize the PCA with a bi-plot 
+
+Using a PCA bi-plot visualization from the FactoMineR package, represent the PCA analysis for the 4 stimulations, by coloring each observation by its TruCulture Stimulus Name.
+
+Describe the bi-plot you observe, identify the cytokines that are the most contributing to the first two principal components of the PCA. Comment on the presence of clusters, and how the cytokine variables relate to them.
+
+```{r}
+biplot_pca(pca_res = pca_4stim, df_data = df_4stim_log, axes = c(1,2), habillage = "StimulusName")
+```
+
+Your comments of the bi-plot here:
+
+-   ...
+
+-   
+
+## PCA exploration on individual stimulation 
+
+Following the overall analysis of the 3 types of immune responses (microbial, viral, tcell), now, we want to focus on each individual stimulation to better understand their unique variability measured in the healthy cohort from the Milieu Intérieur project.
+
+### Identify the key cytokines for each stimulations
+
+For each of the 3 stimulations (BCG, PolyIC, SEB), put in place the necessary R code that will allow you to visualize the variability of the response, and identify the cytokines that are driving most of the variability. Use the Sex variable as the 'habillage' parameter, and the Age as a supplementary variable, to also be able to comment on the Age and Sex influences on the immune response.
+
+#### Focus on BCG stimulation
+
+```{r}
+# Your code here for the BCG stimulation
+# hint: after filtering the dataset to BCG only samples, and computing the PCA, make use of the scree plot to identify the number of important principal components.
+```
+
+```{r}
+# filter to keep only BCG samples
+df_bcg_log <- df_4stim_log |>
+  dplyr::filter(StimulusName == "BCG")
+# compiute PCA on BCG only
+pca_bcg <- compute_pca(df_data = df_bcg_log)
+```
+
+```{r}
+# Scree plot for BCG only
+factoextra::fviz_screeplot(pca_bcg)
+```
+
+```{r}
+# Bi-plot for BCG only response
+biplot_pca(pca_res = pca_bcg, df_data = df_bcg_log, 
+           axes = c(1,2), habillage = "Sex",
+            
+           invisible = "none")
+```
+
+#### Focus on PolyIC stimulation
+
+```{r}
+# Your code here for the PolyIC stimulation
+# hint: after filtering the dataset to PolyIC only samples, and computing the PCA, make use of the scree plot to identify the number of important principal components.
+```
+
+```{r}
+# filter to keep only PolyIC samples
+df_polyic_log <- df_4stim_log |>
+  dplyr::filter(StimulusName == "PolyIC")
+# compiute PCA on PolyIC only
+pca_polyic <- compute_pca(df_data = df_polyic_log)
+```
+
+```{r}
+# Scree plot for PolyIC samples
+factoextra::fviz_screeplot(pca_polyic)
+```
+
+```{r}
+# Bi-plot for PolyIC only response
+biplot_pca(pca_res = pca_polyic, df_data = df_polyic_log, 
+           axes = c(1,3), habillage = "Sex",
+           invisible = "none")
+```
+
+#### Focus on SEB stimulation
+
+```{r}
+# Your code here for the PolyIC stimulation
+# hint: after filtering the dataset to BCG only samples, and computing the PCA, make use of the scree plot to identify the number of important principal components.
+```
+
+```{r}
+# filter to keep only SEB samples
+df_seb_log <- df_4stim_log |>
+  dplyr::filter(StimulusName == "SEB")
+# compute PCA on SEB only
+pca_seb <- compute_pca(df_data = df_seb_log)
+```
+
+```{r}
+# Scree plot for SEB samples
+factoextra::fviz_screeplot(pca_seb)
+```
+
+```{r}
+# Bi-plot for SEB only response
+biplot_pca(pca_res = pca_seb, df_data = df_seb_log, 
+           axes = c(1,2), habillage = "Sex",
+           invisible = "none")
+```
+
+### Explore the associations with CMV, Smoking, and BMI
+
+As described in the original paper from Saint-André et al, smoking, cytomegalovirus (CMV) latent infection and body mass index (BMI) are major contributors to variability in cytokine responses
+
+With the bi-plot visualization of the PCA, we will be able to evaluate the different associations by using the 'habillage' and 'addEllipse' parameters from the fviz_pca_biplot() function. These parameters will help us highlight the position of each sub-populations in the context of CMV or Smoking, where a shift between these clustered sub-population will be indicative of a possible association. For BMI, we will be interested to assess how this supplementary quantitative variable is associated with cytokine variables.
+
+#### Identify the stimulation most associated with CMV
+
+##### Focus on BCG
+
+```{r}
+# Bi-plot for BCG only response with CMV clustering
+biplot_pca(pca_res = pca_bcg, df_data = df_bcg_log, 
+           axes = c(1,2), habillage = "CMVPositiveSerology",
+           invisible = "none")
+```
+
+##### Focus on PolyIC
+
+```{r}
+# Bi-plot for PolyIC only response with CMV clustering
+biplot_pca(pca_res = pca_polyic, df_data = df_polyic_log, 
+           axes = c(1,2), habillage = "CMVPositiveSerology",
+           invisible = "none")
+```
+
+##### Focus on SEB
+
+```{r}
+# Bi-plot for SEB only response with CMV clustering
+biplot_pca(pca_res = pca_seb, df_data = df_seb_log, 
+           axes = c(1,2), habillage = "CMVPositiveSerology",
+           invisible = "none")
+```
+
+#### Identify the stimulation most associated with Smoking
+
+##### Focus on BCG
+
+```{r}
+# Bi-plot for BCG only response with Smoking clustering
+biplot_pca(pca_res = pca_bcg, df_data = df_bcg_log, 
+           axes = c(1,2), habillage = "Smoking",
+           invisible = "none")
+```
+
+##### Focus on PolyIC
+
+```{r}
+# Bi-plot for PolyIC only response with Smoking clustering
+biplot_pca(pca_res = pca_polyic, df_data = df_polyic_log, 
+           axes = c(1,2), habillage = "Smoking",
+           invisible = "none")
+```
+
+##### Focus on SEB
+
+```{r}
+# Bi-plot for SEB only response with Smoking clustering
+biplot_pca(pca_res = pca_seb, df_data = df_seb_log, 
+           axes = c(1,2), habillage = "Smoking",
+           invisible = "none")
+```
+
+#### Identify the stimulation most associated with BMI
+
+##### Focus on BCG
+
+```{r}
+# Bi-plot for BCG only response with BMI
+biplot_pca(pca_res = pca_bcg, df_data = df_bcg_log, 
+           axes = c(1,2), 
+           invisible = "ind")
+```
+
+##### Focus on PolyIC
+
+```{r}
+# Bi-plot for BCG only response with BMI
+biplot_pca(pca_res = pca_polyic, df_data = df_polyic_log, 
+           axes = c(1,3), 
+           invisible = "ind")
+```
+
+##### Focus on SEB
+
+```{r}
+# Bi-plot for SEB only response with BMI
+biplot_pca(pca_res = pca_seb, df_data = df_seb_log, 
+           axes = c(1,2), 
+           invisible = "ind")
+```

@@ -1,0 +1,345 @@
+---
+title: "PCA Cookbook with FactoMineR"
+format: 
+  html:
+    embed-resources: true
+editor: visual
+---
+
+In this report, we will introduce the main concepts behind the Principal Component Analysis (PCA) method by using the **FactoMineR** package, and a synthetic dataset. We will review the most useful functions to compute and visualize PCA results. By controlling the initial structure of the synthetic dataset, it will help us to better understand the outputs of the method, and their interpretations.
+
+## Introduction
+
+Principal Component Analysis (PCA) is a dimensionality reduction technique used to summarize large datasets while preserving as much variability as possible. It transforms the original variables into a set of uncorrelated components (principal components) that capture the maximum variance in the data. PCA is widely used for visualizing high-dimensional data and identifying patterns, clusters, and outliers.
+
+#### **Required Assumptions**
+
+-   **Numerical Data**: The input data should consist of continuous variables.
+-   **Linearity**: PCA assumes that relationships between variables are linear.
+-   **High Variance Implies Importance**: PCA assumes that variability in data corresponds to meaningful information.
+-   **Mean-Centering and Scaling**: Variables should be centered and scaled to ensure comparability if they are on different scales, or have different dynamic ranges.
+
+------------------------------------------------------------------------
+
+#### **Use Cases for a Principal Component Analysis**
+
+1.  **Dimensionality Reduction**: Reducing the number of variables in gene expression or proteomics datasets for example.
+2.  **Data Visualization**: Projecting high-dimensional data onto 2D or 3D plots to identify clusters, trends, or outliers.
+3.  **Noise Filtering**: Removing less informative components (low-variance components) to improve data quality.
+
+------------------------------------------------------------------------
+
+#### **Shortcomings**
+
+-   **Loss of Interpretability**: Principal components are linear combinations of original variables, making biological interpretation challenging.
+-   **Not Suitable for Nonlinear Patterns**: PCA cannot capture complex, nonlinear relationships in data.
+-   **Impact of Outliers**: Outliers can disproportionately influence the results and distort the principal components.
+
+PCA is a powerful exploratory tool but should be used with caution, ensuring its assumptions align with the dataset and research objectives.
+
+## Set-Up
+
+Load the necessary R libraries
+
+```{r}
+library(tidyverse)
+library(FactoMineR)
+library(factoextra)
+
+# For reproducibility purposes we set a seed because we use random generators
+set.seed(42)
+```
+
+## Synthetic Data Generation
+
+**Build a synthetic dataset with the following properties:**
+
+-   Consider a group of 50 patients: group_1
+
+-   Generate a synthetic dataset simulating the expression of 5 cytokines.
+
+-   These cytokine expressions are not random. We build into the data a controlled level of correlations. First, cytokine\_{1,2,3} are highly correlated, and cytokine\_{4,5} are also highly correlated between them, but have very little correlation with the first three.
+
+```{r}
+# number of patients to simulate
+nb_patients_gp1 <- 50
+
+# we consider that we have normalized expression with mean=0
+cytokine_means_gp1 <- c(cytokine_1 = 0, cytokine_2 = 0, cytokine_3 = 0, cytokine_4 = 0, cytokine_5=0)
+# we build a covariance matrix to describe the correlation structure between the variables
+cytokine_covariance_mtx_gp1 <- matrix(c(1.0, 0.8, 0.9, 0.1, 0.1,
+                                        0.8, 1.0, 0.8, 0.1, 0.1,
+                                        0.9, 0.8, 1.0, 0.1, 0.1,
+                                        0.1, 0.1, 0.1, 1.0, 0.9,
+                                        0.1, 0.1, 0.1, 0.9, 1.0), nrow = 5)
+
+# build a tibble data.frame with subject_id and group_id
+df_group_1 <- tibble(subject_id = paste0("SUBJ",1:nb_patients_gp1),
+                     group_id = "group_1") |> 
+  # add columns related to cytokine expressions 
+  dplyr::bind_cols(as_tibble(MASS::mvrnorm(n = nb_patients_gp1,
+                                          mu = cytokine_means_gp1, 
+                                          Sigma = cytokine_covariance_mtx_gp1)))
+
+head(df_group_1)
+```
+
+## Visualization of the correlation structure
+
+First, let's validate the correlation structure of this synthetic dataset by computing the different correlations between cytokines, and by visualizing them. To do so, we will build a pair plot using the **ggpairs** function from the **GGally** package.
+
+A **pair plot** is a grid of scatterplots showing pairwise relationships between all variables in a dataset. Each scatterplot visualizes the relationship between two variables, while diagonal elements typically display histograms or density plots of individual variables.
+
+It helps identify correlations, patterns, or clusters between variables. It provides a compact summary of variable interactions and distributions. It can also highlights unusual observations across combinations of variables.
+
+### **Recipe 1a: build a pair-plot**
+
+```{r}
+GGally::ggpairs(data = df_group_1, 
+                # specify the column indices of the numerical variables
+                columns = 3:7, 
+                # silence the output during plot generation
+                progress = FALSE)
+```
+
+However, when the number of variables increases, e.g. more than 10 variables, it might become challenging to display the entire pair plot. For a more compact representation, it is recommended to use a correlogram representation, such as the ones provided by the **corrplot** Package.
+
+### **Recipe 1b: build a correlogram**
+
+```{r}
+# compute the pair-wise correlations on the numerical variable only
+cytokines_cor = cor(df_group_1 |> dplyr::select(cytokine_1:cytokine_5),
+                    # specify the correlation metric, see also: spearman for a rank-based correlation
+                    method = "pearson",
+                    # define how to handle missing values
+                    use = "pairwise.complete.obs")
+
+# build the correlogram plot
+corrplot::corrplot.mixed(cytokines_cor, 
+                         # order the variables according to hierachical clustering
+                         order = 'hclust')
+```
+
+## Run a PCA on Group 1 samples
+
+**Principal Component Analysis (PCA)** is a dimensionality reduction technique that transforms a dataset with potentially correlated variables into a smaller set of uncorrelated variables called **principal components (PCs)**. These components are linear combinations of the original variables, ordered by the amount of variance they explain in the data.
+
+This method enables plotting and understanding complex datasets in two or three dimensions by projecting them onto the leading PCs. **PCA** is particularly valuable in exploratory data analysis, compressing data while maintaining interpretability.
+
+### **Recipe 2: compute a PCA with FactoMineR**
+
+```{r}
+pca_gp1 <- FactoMineR::PCA(X = df_group_1, 
+                           scale.unit = TRUE, 
+                           ncp = 5, 
+                           quali.sup = which(names(df_group_1) %in% c("subject_id", "group_id")), 
+                           graph = FALSE)
+```
+
+### Scree plot representation
+
+A **scree plot** is a graphical representation of the variance explained by each principal component (PC) in a PCA analysis. It typically displays the **eigenvalues** or **the proportion of variance explained** by each PC on the y-axis, plotted against the component number on the x-axis.
+
+The scree plot helps determine how many PCs should be retained by showing where the explained variance begins to level off (often called the "elbow"). PCs beyond this point contribute minimally to explaining the variance and are typically discarded.
+
+By focusing on the few components that explain most of the variance, the scree plot aids in dimensionality reduction while retaining meaningful information.
+
+### Recipe 3: build a Scree plot
+
+```{r}
+factoextra::fviz_screeplot(pca_gp1)
+```
+
+**Note:**
+
+-   The dataset has 5 variables, however the scree plot shows that most of the variance is carried by only 2 principal components. This is due to the fact that we have 2 bundles of highly correlated variables(1,2,3 and 4,5).
+
+### Bi-plot representation
+
+A **biplot** in PCA is a graphical representation that combines information about the **observations**, the **principal components (PCs),** and the **original variables** in a single plot. It typically displays the scores of the observations (rows of the dataset) as points, and the loadings of the variables (columns of the dataset) as vectors.
+
+For the **observations**, it shows how they relate to each other in the reduced dimensional space (e.g., clustering or patterns among data points). The closer two observations are, the more they have in common compared to the rest of the observations.
+
+For the **variables**, it highlights correlations between variables when variable vectors are pointing in the same direction, and when they align with a given PC, it shows how they contribute to it.
+
+### Recipe 4: build a bi-plot
+
+```{r}
+factoextra::fviz_pca_biplot(pca_gp1, 
+                            axes = c(1,2), 
+                            geom = "point",
+                            col.var = "blue",
+                            # Use of cytokine_2 values to color observations
+                            col.ind = df_group_1$cytokine_2,
+                            legend.title = "Cytokine 2 Expression", 
+                            gradient.cols = c("#00AFBB", "#FC4E07"),
+                            repel = TRUE)
+```
+
+**Interpretation of the plot:**
+
+-   PC1 carries 54% of the variance, and PC2 carries 37% (total of 91% for the 2D plot)
+
+-   We don't see any special patterns, or clustering, amongst the observations.
+
+-   The vectors of the variables reflect the built-in correlation structure of the dataset (high correlation between {1,2,3}, and {4,5}. The fact that the 2 bundles of vector have 90 degrees angle between them show that they are uncorrelated.
+
+-   Vectors of the variables point in the direction of the observations with the highest expression (see the color gradient for cytokine_2).
+
+-   PC1 is mostly represented by cytokines {1,2,3}, and PC2 is mostly represented by cytokines {4,5}
+
+### Add another group of patients
+
+-   Keep the same correlation structure between the cytokines, however shift the mean values for the cytokines 4 and 5, as if a stimulation had increased their levels.
+
+```{r}
+nb_patients_gp2 <- 50
+
+# increased mean level for cytokine 4 and 5 compared to group_1
+cytokine_means_gp2 <- c(cytokine_1 = 0, cytokine_2 = 0, cytokine_3 = 0, cytokine_4 = 6, cytokine_5=6)
+# same as before
+cytokine_covariance_mtx_gp2 <- matrix(c(1.0, 0.8, 0.9, 0.1, 0.1,
+                                        0.8, 1.0, 0.8, 0.1, 0.1,
+                                        0.9, 0.8, 1.0, 0.1, 0.1,
+                                        0.1, 0.1, 0.1, 1.0, 0.9,
+                                        0.1, 0.1, 0.1, 0.9, 1.0), nrow = 5)
+
+# build a tibble data.frame with subject_id and group_id
+df_group_2 <- tibble(subject_id = paste0("SUBJ",(nb_patients_gp1+1):(nb_patients_gp1+nb_patients_gp2)),
+                     group_id = "group_2") |> 
+  # add columns related to cytokine expressions 
+  dplyr::bind_cols(as_tibble(MASS::mvrnorm(n = nb_patients_gp2,
+                                          mu = cytokine_means_gp2, 
+                                          Sigma = cytokine_covariance_mtx_gp2)))
+
+# aggregate both groups into a unique data.frame
+df_groups <- dplyr::bind_rows(df_group_1, df_group_2)
+tail(df_groups)
+```
+
+**Pair plot exploration**
+
+```{r}
+GGally::ggpairs(df_groups, aes(colour = group_id, alpha = 0.4), columns=3:7, progress = FALSE)
+```
+
+**Note**:
+
+-   the two groups of patients appears to be separated only when considering cytokine {4,5}
+
+### Run PCA on both groups
+
+```{r}
+pca_gps <- FactoMineR::PCA(X = df_groups, 
+                           scale.unit = TRUE, 
+                           ncp = 5, 
+                           quali.sup = which(names(df_group_1) %in% c("subject_id", "group_id")), 
+                           graph = FALSE)
+```
+
+### Bi-plot representation
+
+```{r}
+fviz_pca_biplot(pca_gps, 
+                axes = c(1,2), 
+                geom = "point", 
+                habillage = which(names(df_groups) %in% c("group_id")),
+                addEllipses = TRUE, ellipse.level = 0.95, 
+                col.var = "blue",
+                repel = TRUE)
+```
+
+**Note**:
+
+-   It can be observed that the observations from the group 1 and group 2 are clustered and well separated. And, it is important to notice that the axis of separation is perpendicular to the cytokine {4,5} direction (because the 2 groups differs in mean expression for these 2 cytokines).
+
+## **Advanced visualization**
+
+As it is often important to explore more than the first two principal components (PCs), the following recipe shares a way to build a mosaic plot composed of all the possible combination of 2D plotting to provide a better overview of the importance of each PC.
+
+### **Recipe 5: build a PC pair-plot**
+
+```{r}
+# the number of component to consider
+n_compo <- 5
+
+#first we generate all the combination
+combination_component <- tidyr::crossing(compo_x = 1:n_compo , compo_y = 1:n_compo)
+
+plot_my_pca <- function(pca_gps, .x, .y){factoextra::fviz_pca_ind(pca_gps,axes = c(.y,.x), label = "none", habillage = which(names(df_group_1) %in% c("group_id"))) + ggplot2::ggtitle('')}
+
+purrr::map2(.x = combination_component$compo_x,
+            .y = combination_component$compo_y,
+            .f = ~ plot_my_pca(pca_gps, .x, .y)) %>%
+  ggpubr::ggarrange(plotlist = ., ncol = n_compo, nrow = n_compo, common.legend = TRUE, legend = "bottom")
+```
+
+## Advanced FactoExtra functions:
+
+### Recipe 6: extract the variance per PC table
+
+```{r}
+factoextra::get_eigenvalue(X = pca_gps)
+```
+
+### **Recipe 7a: plot only individual observations**
+
+```{r}
+factoextra::fviz_pca_ind(X = pca_gps, 
+                         axes = c(1,2), 
+                         geom = "point", 
+                         habillage =2)
+```
+
+### Recipe 7b: get individual observation info tables
+
+```{r}
+ind_tables <- factoextra::get_pca_ind(res.pca = pca_gps)
+ind_tables
+```
+
+### Recipe 7c: get individual observation coordinates table
+
+```{r}
+ind_tables <- factoextra::get_pca_ind(res.pca = pca_gps)
+ind_tables$coord
+```
+
+### **Recipe 8a: plot only variables**
+
+```{r}
+factoextra::fviz_pca_var(X = pca_gps, 
+                         axes = c(1,2), 
+                         geom.var = c("arrow", "text"), 
+                         repel = TRUE, 
+                         select.var = NULL)
+```
+
+### Recipe 8b: get variables info tables
+
+```{r}
+var_tables <- factoextra::get_pca_var(res.pca = pca_gps)
+var_tables
+```
+
+### Recipe 8c: get variable coordinates table
+
+```{r}
+var_tables <- factoextra::get_pca_var(res.pca = pca_gps)
+var_tables$coord
+```
+
+### Recipe 8d: get variable contribution table
+
+```{r}
+var_tables <- factoextra::get_pca_var(res.pca = pca_gps)
+var_tables$contrib
+```
+
+## To Continue Learning:
+
+-   [FactoMineR website](http://factominer.free.fr/factomethods/principal-components-analysis.html)
+
+-   [FactoMineR Online Course](http://factominer.free.fr/course/MOOC.html)
+
+-   [FactoMineR and factoextra tutorial](https://www.sthda.com/english/articles/31-principal-component-methods-in-r-practical-guide/112-pca-principal-component-analysis-essentials/)

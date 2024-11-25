@@ -1,0 +1,134 @@
+---
+title: "Ggplot2 Principles"
+author: "HKU Pasteur R Workshop 2024"
+format: 
+  html:
+    toc: true
+    toc-location: left
+    toc_float: true
+    other-links:
+      - text: ggplot2 cheat sheet
+        href: https://posit.co/wp-content/uploads/2022/10/data-visualization-1.pdf
+editor: visual
+---
+
+# Ggplot2 Principles
+
+### Load required R libraries
+
+```{r}
+library(ggplot2)
+library(tibble)
+```
+
+### Build a synthetic dataset
+
+```{r}
+set.seed(123)  # For reproducibility
+
+# Number of patients
+nb_patients <- 200
+
+# Generate synthetic data
+synthetic_data <- tibble(
+  subject_id = paste0("Patient_", 1:nb_patients),
+  age = rnorm(nb_patients, mean = 50, sd = 15),
+  sex = sample(c("male", "female"), 
+               size = nb_patients, 
+               prob = c(0.7, 0.3), replace = TRUE),
+  treatment = sample(c("Placebo", "Drug A", "Drug B"), 
+                     nb_patients, replace = TRUE),
+  biomarker_A = rnorm(nb_patients, mean = 5, sd = 1.5),
+  # biomarker_B Correlated with biomarker_A
+  biomarker_B = biomarker_A * 0.8 + rnorm(nb_patients, mean = 2, sd = 1), 
+  outcome = 50 + 0.5 * age + 
+    ifelse(treatment == "Drug A", 10, 
+           ifelse(treatment == "Drug B", 15, 0)) +
+            rnorm(nb_patients, mean = 0, sd = 5))
+
+# Display first few rows of the dataset
+head(synthetic_data)
+```
+
+## Introduction
+
+The `ggplot2` library in R is built on the principles of the "Grammar of Graphics," a framework that defines a structured approach to creating visualizations. Developed by Leland Wilkinson and implemented by Hadley Wickham, the grammar breaks down complex plots into basic, layered components. In `ggplot2`, every plot is constructed using a consistent set of elements: data, aesthetic mappings (like `x`, `y`, color), and geometric objects (such as points, lines, or bars). Layers can then be added to control scales, facets, and statistical transformations, allowing for powerful customization and clarity in displaying data relationships. The grammar-based structure of `ggplot2` enables flexibility in combining these elements, making it easy to build clear, complex plots in a standardized, reproducible way. `ggplot2` emphasizes "tidy" data, where each variable is a column and each observation is a row, allowing seamless integration with the broader Tidyverse toolkit.
+
+![](images/ggplot2_layers.jpg){fig-align="center"}
+
+## Building plots layer-by-layer
+
+### Data layer
+
+```{r}
+ggplot(data = synthetic_data) +
+  labs(title = "Plot with synthetic data")
+```
+
+### Aesthetics mapping layer
+
+```{r}
+ggplot(data = synthetic_data, aes(x = biomarker_A, y = biomarker_B)) +
+  labs(title = "Plot with synthetic data")
+```
+
+### Geometric layer
+
+```{r}
+ggplot(data = synthetic_data, aes(x = biomarker_A, y = biomarker_B)) +
+  geom_point() +
+  labs(title = "Plot with synthetic data")
+
+ggplot(data = synthetic_data, aes(x = biomarker_A, y = biomarker_B, color = sex)) +
+  geom_point() +
+  labs(title = "Plot with synthetic data")
+
+ggplot(data = synthetic_data, aes(x = biomarker_A, y = biomarker_B, color = sex, size = age)) +
+  geom_point() +
+  labs(title = "Plot with synthetic data")
+
+```
+
+### Facet layer
+
+```{r}
+ggplot(data = synthetic_data, aes(x = biomarker_A, y = biomarker_B, color = sex, size = age)) +
+  geom_point() +
+  facet_wrap(~ treatment) +
+  labs(title = "Plot with synthetic data")
+```
+
+### Statistics layer
+
+```{r}
+ggplot(data = synthetic_data, aes(x = biomarker_A, y = biomarker_B, color = sex)) +
+  geom_point() +
+  facet_wrap(~ treatment) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Plot with synthetic data")
+```
+
+### Coordinate layer
+
+```{r}
+ggplot(data = synthetic_data, aes(x = biomarker_A, y = biomarker_B, color = sex)) +
+  geom_point() +
+  facet_wrap(~ treatment) +
+  geom_smooth(method = "lm", se = FALSE) +
+  scale_x_log10("Biomarker_A Log Scale") +
+  scale_y_continuous("Biomarker B", limits = c(3, 15)) +
+  labs(title = "Plot with synthetic data")
+```
+
+### Theme layer
+
+```{r}
+ggplot(data = synthetic_data, aes(x = biomarker_A, y = biomarker_B, color = sex)) +
+  geom_point() +
+  facet_wrap(~ treatment) +
+  geom_smooth(method = "lm", se = FALSE) +
+  scale_x_log10("Biomarker_A Log Scale") +
+  scale_y_continuous("Biomarker B", limits = c(3, 15)) +
+  theme_bw() +
+  labs(title = "Plot with synthetic data") 
+```

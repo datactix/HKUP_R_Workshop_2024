@@ -1,0 +1,133 @@
+---
+title: "Ggplot2 Plot Customization"
+author: "HKU Pasteur R Workshop 2024"
+format: 
+  html:
+    toc: true
+    toc-expand: 3
+    toc-depth: 3
+    toc-location: left
+    other-links:
+      - text: ggplot2 cheat sheet
+        href: https://posit.co/wp-content/uploads/2022/10/data-visualization-1.pdf
+editor: visual
+---
+
+# Ggplot2 Plot Customizations
+
+## Set-up
+
+### Load required R libraries
+
+```{r}
+library(ggplot2)
+library(tibble)
+```
+
+### Build a synthetic dataset
+
+```{r}
+set.seed(123)  # For reproducibility
+
+# Number of patients
+nb_patients <- 200
+
+# Generate synthetic data
+synthetic_data <- tibble(
+  subject_id = paste0("Patient_", 1:nb_patients),
+  age = rnorm(nb_patients, mean = 50, sd = 15),
+  sex = sample(c("male", "female"), 
+               size = nb_patients, 
+               prob = c(0.7, 0.3), replace = TRUE),
+  treatment = sample(c("Placebo", "Drug A", "Drug B"), 
+                     nb_patients, replace = TRUE),
+  biomarker_A = rnorm(nb_patients, mean = 5, sd = 1.5),
+  # biomarker_B Correlated with biomarker_A
+  biomarker_B = biomarker_A * 0.8 + rnorm(nb_patients, mean = 2, sd = 1), 
+  outcome = 50 + 0.5 * age + 
+    ifelse(treatment == "Drug A", 10, 
+           ifelse(treatment == "Drug B", 15, 0)) +
+            rnorm(nb_patients, mean = 0, sd = 5))
+
+# Display first few rows of the dataset
+head(synthetic_data)
+```
+
+## Introduction
+
+`ggplot2` offers extensive customization options to create visually appealing and informative plots. Users can modify aesthetics like colors, shapes, and sizes to highlight key patterns, adjust themes to change the overall look, and add annotations for clarity. With layering capabilities, `ggplot2` allows combining multiple geoms, customizing scales, and fine-tuning legends. Its flexibility ensures that plots are not only functional but also tailored to the audience and data context, making `ggplot2` a powerful tool for creating compelling visualizations.
+
+![](images/ggplot2_themes.png){fig-align="center"}
+
+### Add main title, sub-title, and source
+
+```{r}
+#| echo: false
+ggplot(synthetic_data, aes(biomarker_A, biomarker_B)) +
+  geom_point() +
+  labs(title = "Main Title", subtitle = "Subtitle", caption = "Data Source: XYZ")
+```
+
+### Customize axis labels
+
+```{r}
+ ggplot(synthetic_data, aes(biomarker_A, biomarker_B)) +
+  geom_point() +
+  labs(x = "Custom X-axis Label", y = "Custom Y-axis Label")
+```
+
+### Adjust Axis Scales
+
+```{r}
+ggplot(synthetic_data, aes(biomarker_A, biomarker_B)) +
+  geom_point() +
+  scale_x_log10(breaks = c(1, 10, 100), labels = scales::comma) +
+  scale_y_continuous(breaks = seq(0, 10, 1))
+```
+
+### Annotating plot with text
+
+```{r}
+ggplot(synthetic_data, aes(biomarker_A, biomarker_B)) +
+  geom_point() +
+  annotate("text", x = 6, y = 10, 
+           label = "Important Point", color = "red")
+```
+
+### Highlighting an area
+
+```{r}
+ ggplot(synthetic_data, aes(biomarker_A, biomarker_B)) +
+  geom_point() +
+   annotate("rect", 
+            xmin = 5, xmax = 15, 
+            ymin = 10, ymax = 30, 
+            alpha = 0.2, fill = "yellow")
+```
+
+### Drawing reference lines
+
+```{r}
+ggplot(synthetic_data, aes(biomarker_A, biomarker_B)) +
+  geom_point() +
+  geom_hline(yintercept = 5, linetype = "dashed", color = "blue") +
+  geom_vline(xintercept = 2, color = "red")
+```
+
+### Customizing themes
+
+```{r}
+ggplot(synthetic_data, aes(biomarker_A, biomarker_B)) +
+  geom_point() +
+  theme_bw() +
+  theme(axis.text = element_text(size = 12, color = "blue"))
+
+```
+
+### Rotating axis text
+
+```{r}
+ ggplot(synthetic_data, aes(biomarker_A, biomarker_B)) +
+  geom_point() +
+   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
